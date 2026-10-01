@@ -16,10 +16,7 @@ import br.com.fiap.petcare360_java.dto.RegisterRequest;
 import br.com.fiap.petcare360_java.dto.UserResponse;
 import br.com.fiap.petcare360_java.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import jakarta.validation.Valid;
 
 @RestController
@@ -36,6 +33,7 @@ public class AuthController {
 			summary = "Registrar usuário",
 			description = "Cria uma conta de usuário cliente para acesso ao sistema.")
 	@PostMapping("/register")
+	@SecurityRequirements
 	public ResponseEntity<AuthResponse> register(@RequestBody @Valid RegisterRequest request) {
 		return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(request));
 	}
@@ -44,14 +42,14 @@ public class AuthController {
 			summary = "Login",
 			description = "Valida e-mail e senha usando Spring Security.")
 	@PostMapping("/login")
-	public ResponseEntity<AuthResponse> login(@RequestBody @Valid AuthRequest request,
-			HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
-		return ResponseEntity.ok(authService.login(request, httpRequest, httpResponse));
+	@SecurityRequirements
+	public ResponseEntity<AuthResponse> login(@RequestBody @Valid AuthRequest request) {
+		return ResponseEntity.ok(authService.login(request));
 	}
 
 	@Operation(
 			summary = "Usuário autenticado",
-			description = "Retorna os dados do usuário logado quando a sessão JSESSIONID ainda está válida.")
+			description = "Retorna o usuario identificado pelo JWT enviado em Authorization: Bearer.")
 	@GetMapping("/me")
 	public UserResponse me() {
 		return authService.me();
@@ -59,22 +57,11 @@ public class AuthController {
 
 	@Operation(
 			summary = "Logout",
-			description = "Invalida a sessão atual e expira o cookie JSESSIONID no servidor.")
+			description = "Confirma a saida. O cliente deve apagar o JWT; o token emitido continua valido ate expirar.")
 	@PostMapping("/logout")
-	public ResponseEntity<MessageOnlyResponse> logout(HttpServletRequest request, HttpServletResponse response) {
+	public ResponseEntity<MessageOnlyResponse> logout() {
 		SecurityContextHolder.clearContext();
 
-		HttpSession session = request.getSession(false);
-		if (session != null) {
-			session.invalidate();
-		}
-
-		Cookie cookie = new Cookie("JSESSIONID", null);
-		cookie.setPath("/");
-		cookie.setHttpOnly(true);
-		cookie.setMaxAge(0);
-		response.addCookie(cookie);
-
-		return ResponseEntity.ok(new MessageOnlyResponse("Logout realizado com sucesso."));
+		return ResponseEntity.ok(new MessageOnlyResponse("Remova o token do aplicativo para concluir o logout."));
 	}
 }

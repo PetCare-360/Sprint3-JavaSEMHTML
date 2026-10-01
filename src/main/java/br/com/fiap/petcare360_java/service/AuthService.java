@@ -2,13 +2,11 @@ package br.com.fiap.petcare360_java.service;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.springframework.security.web.context.SecurityContextRepository;
+import br.com.fiap.petcare360_java.security.JwtService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,8 +18,6 @@ import br.com.fiap.petcare360_java.exception.ApiException;
 import br.com.fiap.petcare360_java.model.AppUser;
 import br.com.fiap.petcare360_java.repository.AppUserRepository;
 import br.com.fiap.petcare360_java.repository.RoleRepository;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 
 @Service
 public class AuthService {
@@ -31,15 +27,16 @@ public class AuthService {
 	private final AuthenticationManager authenticationManager;
 	private final RoleRepository roleRepository;
 	private final PetMapper mapper;
-	private final SecurityContextRepository securityContextRepository = new HttpSessionSecurityContextRepository();
+	private final JwtService jwtService;
 
 	public AuthService(AppUserRepository userRepository, PasswordEncoder passwordEncoder,
-			AuthenticationManager authenticationManager, RoleRepository roleRepository, PetMapper mapper) {
+			AuthenticationManager authenticationManager, RoleRepository roleRepository, PetMapper mapper, JwtService jwtService) {
 		this.userRepository = userRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.authenticationManager = authenticationManager;
 		this.roleRepository = roleRepository;
 		this.mapper = mapper;
+		this.jwtService = jwtService;
 	}
 
 	@Transactional
@@ -73,20 +70,17 @@ public class AuthService {
 		throw new ApiException(HttpStatus.BAD_REQUEST, "Perfil permitido apenas para tutor ou veterinário");
 	}
 
-	public AuthResponse login(AuthRequest request, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+	@Transactional(readOnly = true)
+	public AuthResponse login(AuthRequest request) {
 		String email = request.email().trim().toLowerCase();
 		var authRequest = new UsernamePasswordAuthenticationToken(email, request.password());
 		Authentication authentication = authenticationManager.authenticate(authRequest);
 
-		SecurityContext context = SecurityContextHolder.createEmptyContext();
-		context.setAuthentication(authentication);
-		SecurityContextHolder.setContext(context);
-		securityContextRepository.saveContext(context, httpRequest, httpResponse);
-
 		AppUser user = userRepository.findByEmail(email)
 				.orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Credenciais inválidas"));
 
-		return new AuthResponse("Login realizado com sucesso", mapper.toUserResponse(user));
+		return new AuthResponse("Login realizado com sucesso", mapper.toUserResponse(user),
+				jwtService.issue(authentication), "Bearer", jwtService.expiresIn());
 	}
 
 	@Transactional(readOnly = true)

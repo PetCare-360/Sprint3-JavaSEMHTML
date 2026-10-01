@@ -1,6 +1,11 @@
 package br.com.fiap.petcare360_java.security;
 
 import java.util.List;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.web.AuthenticationEntryPoint;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,8 +30,32 @@ import jakarta.servlet.http.HttpServletResponse;
 public class SecurityConfig {
 
 	@Bean
-	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+	public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtService jwtService,
+			UserDetailsService userDetailsService) throws Exception {
+		AuthenticationEntryPoint unauthorized = (request, response, exception) -> {
+			response.setStatus(401);
+			response.setContentType("application/json;charset=UTF-8");
+			response.setHeader("WWW-Authenticate", "Bearer");
+			response.getWriter().write("{\"status\":401,\"message\":\"Token ausente, invalido ou expirado\"}");
+		};
 		http
+				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+				.requestCache(cache -> cache.disable())
+				.logout(logout -> logout.disable())
+				.oauth2ResourceServer(oauth -> oauth
+						.authenticationEntryPoint(unauthorized)
+						.jwt(jwt -> jwt.decoder(jwtService::decode).jwtAuthenticationConverter(token -> {
+							try {
+								var user = userDetailsService.loadUserByUsername(token.getSubject());
+								if (!user.isEnabled() || !user.isAccountNonLocked() || !user.isAccountNonExpired()
+										|| !user.isCredentialsNonExpired()) {
+									throw new OAuth2AuthenticationException("invalid_token");
+								}
+								return new JwtAuthenticationToken(token, user.getAuthorities(), user.getUsername());
+							} catch (AuthenticationException exception) {
+								throw new OAuth2AuthenticationException("invalid_token");
+							}
+						})))
 				.cors(cors -> cors.configurationSource(corsConfigurationSource()))
 				.csrf(csrf -> csrf.disable())
 				.authorizeHttpRequests(auth -> auth
@@ -41,10 +70,13 @@ public class SecurityConfig {
 				.formLogin(form -> form.disable())
 				.httpBasic(basic -> basic.disable())
 				.exceptionHandling(exception -> exception
-						.authenticationEntryPoint((request, response, authException) ->
-								response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Não autenticado"))
+						.authenticationEntryPoint(unauthorized)
 						.accessDeniedHandler((request, response, accessDeniedException) ->
-								response.sendError(HttpServletResponse.SC_FORBIDDEN, "Acesso negado")));
+								{
+									response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+									response.setContentType("application/json;charset=UTF-8");
+									response.getWriter().write("{\"status\":403,\"message\":\"Acesso negado\"}");
+								}));
 
 		return http.build();
 	}
@@ -55,7 +87,7 @@ public class SecurityConfig {
 		configuration.setAllowedOriginPatterns(List.of("*"));
 		configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
 		configuration.setAllowedHeaders(List.of("*"));
-		configuration.setAllowCredentials(true);
+		configuration.setAllowCredentials(false);
 
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
 		source.registerCorsConfiguration("/**", configuration);

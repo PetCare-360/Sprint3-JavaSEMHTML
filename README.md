@@ -2,7 +2,42 @@
 
 Aplicacao web Java Spring Boot para monitoramento de pets com coleiras inteligentes.
 
-> Esta pasta contem uma copia funcional do projeto `petcare360_java`. A regra de negocio, banco de dados, seguranca, endpoints, Flyway e servicos sao os mesmos da versao com HTML, mas esta versao foi separada sem os arquivos de tela `.html`.
+> Esta versao deriva do projeto `petcare360_java`, sem telas HTML. Agora usa JWT Bearer, enquanto a versao com HTML mantem sua autenticacao por sessao.
+
+## Autenticacao JWT
+
+Configure no Render/Azure ou no ambiente de execucao local:
+
+- `PETCARE360_JWT_SECRET`: chave aleatoria com pelo menos 32 bytes. Gere com `openssl rand -hex 32`. Nao publique a chave no GitHub.
+- `PETCARE360_JWT_EXPIRATION_MINUTES`: tempo de validade, padrao `120` (entre 1 e 1440).
+
+O arquivo `.env.example` e apenas um modelo; o Spring nao carrega esse arquivo automaticamente.
+Mantenha a mesma chave entre reinicios e replicas. Trocar a chave invalida todos os tokens anteriores.
+
+Faca `POST /auth/login` com:
+
+```json
+{"email": "admin@petcare360.com", "password": "admin000"}
+```
+
+A resposta preserva `message` e `user` (incluindo `role`) e acrescenta
+`token`, `tokenType: "Bearer"` e `expiresIn` em segundos.
+Envie nas chamadas protegidas:
+
+```http
+Authorization: Bearer SEU_TOKEN
+```
+
+No Swagger, faca login, copie apenas o valor de `token`, clique em **Authorize** e cole.
+O cadastro continua publico e nao autentica automaticamente; faca login depois.
+O Mobile deve substituir o cookie JSESSIONID pelo cabecalho Authorization.
+Sem token, com token invalido ou expirado: HTTP 401. Sem permissao: HTTP 403.
+Ao expirar, faca login novamente; nao ha refresh token.
+
+`POST /auth/logout` exige token e confirma a saida, mas nao revoga o JWT no servidor.
+O aplicativo deve apagar o token do armazenamento. Uma copia do token continua valida
+ate expirar. Usuarios desativados e mudancas de perfil sao verificados no banco a cada requisicao.
+Nao e necessario alterar as tabelas Oracle para esta migracao.
 
 ## Sobre O Projeto
 
@@ -35,8 +70,8 @@ O projeto vai alem de um CRUD simples: ele processa telemetria IoT, calcula aler
 ## Principais Funcionalidades
 
 - Cadastro e login de usuarios.
-- Cadastro de conta como tutor ou veterinario pela tela web.
-- Autenticacao com Spring Security por formulario.
+- Cadastro de conta como tutor ou veterinario pela API.
+- Autenticacao com Spring Security e JWT Bearer, sem sessao.
 - Perfis `ROLE_ADMIN`, `ROLE_CLIENTE` e `ROLE_VETERINARIO`.
 - Protecao de rotas com base no perfil do usuario.
 - CRUD de pets para tutor, veterinario e administrador.
@@ -171,8 +206,8 @@ Ao receber uma leitura, o backend:
 |---|---|---|
 | POST | `/auth/register` | Registra usuario |
 | POST | `/auth/login` | Realiza login |
-| GET | `/auth/me` | Retorna o usuario autenticado pela sessao atual |
-| POST | `/auth/logout` | Encerra a sessao e invalida o cookie JSESSIONID |
+| GET | `/auth/me` | Retorna o usuario autenticado pelo JWT |
+| POST | `/auth/logout` | Confirma saida; o cliente deve apagar o JWT, sem revogacao no servidor |
 
 ### Pets
 
